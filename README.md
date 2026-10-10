@@ -26,14 +26,16 @@ flowchart LR
     E -.->|rebuild| J
 ```
 
-Para cada mensagem, numa transação só:
+Para cada mensagem:
 
 1. Valido o envelope. Se não for JSON ou faltar campo, a mensagem vai para `rejected_events` com o motivo e o consumo segue.
 2. Gravo o evento em `events`. O `eventId` é a chave: se já existe, nada muda.
 3. Leio todos os eventos daquele pedido e recalculo a linha dele em `orders` (e os itens em `order_items`).
 4. Só depois do commit no banco eu confirmo o offset no Kafka.
 
-A API lê apenas `orders` e `order_items`. A tabela `events` é a fonte: o resto pode ser apagado e refeito.
+Os passos 2 e 3 vão na mesma transação. A rejeição do passo 1 tem a sua.
+
+A API lê `orders` e `order_items`. De `events` ela só busca a data do último evento (o `lastEventAt` do resumo). A tabela `events` é a fonte: o resto pode ser apagado e refeito.
 
 De onde vem cada campo do pedido:
 
