@@ -161,7 +161,7 @@ O CI repete tudo isso: `quality`, `test` e um job `e2e` que sobe o compose, roda
 - **Rejeitar só o que é problema do dado.** JSON quebrado, envelope incompleto, id com mais de 200 caracteres (não cabe no índice), payload errado de um tipo conhecido e texto que o PostgreSQL recusa (um `\u0000`, por exemplo) vão para `rejected_events`. Erro de infraestrutura (banco fora) não: o consumidor volta o offset e tenta de novo, senão perderia o evento.
 - **Reconstrução com o serviço no ar.** O comando trava a escrita em `orders` até terminar. O consumidor espera e depois grava o estado completo do pedido; quem está lendo a API continua vendo os dados antigos até o commit.
 - **Dinheiro em `NUMERIC` e `Decimal`.** As somas são feitas no banco, sem ponto flutuante. Só viram `float` na saída, porque o contrato pede número JSON.
-- **O consumidor cria os tópicos se eles não existirem** (3 partições, como no contrato). Assim não importa se ele sobe antes ou depois de quem publica.
+- **O consumidor cria os tópicos se eles não existirem** (3 partições, como no contrato). Assim não importa se ele sobe antes ou depois de quem publica. Se o broker recusar a criação, ele não começa a ler: registra o motivo e tenta de novo.
 - **Tudo em UTC.** O faturamento entra no dia e na hora em que o pedido foi confirmado. Dia ou hora sem pedido confirmado não aparece na resposta.
 - **Sem login aqui.** Quem protege `/api/analytics/**` (papel `admin`) é o gateway.
 

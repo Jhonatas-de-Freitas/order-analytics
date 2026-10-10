@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 import pytest
 from aiokafka import AIOKafkaProducer
 from aiokafka.admin import AIOKafkaAdminClient
-from aiokafka.errors import GroupCoordinatorNotAvailableError
+from aiokafka.errors import GroupCoordinatorNotAvailableError, InvalidPartitionsError
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -165,3 +165,33 @@ async def test_message_that_could_not_be_stored_is_read_again_instead_of_skipped
     async with sessions() as session:
         stored = (await session.scalars(select(Event.type).order_by(Event.occurred_at))).all()
     assert stored == ["OrderCreated", "StockReserved", "PaymentApproved", "OrderConfirmed"]
+
+
+async def test_topic_that_the_broker_refuses_to_create_is_reported_as_an_error(
+    kafka: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(consumer_module, "PARTITIONS_PER_TOPIC", 0)
+
+    with (
+        caplog.at_level(logging.INFO, logger="order_analytics.consumer"),
+        pytest.raises(InvalidPartitionsError, match=r"\.events"),
+    ):
+        await consumer_module._ensure_topics(kafka)
+
+    assert "topics created" not in caplog.text
+
+
+async def test_topic_that_someone_else_created_in_the_meantime_is_not_an_error(
+    kafka: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    await consumer_module._ensure_topics(kafka)
+
+    async def nothing_yet(self: AIOKafkaAdminClient) -> list[str]:
+        return []
+
+    # The topics exist, but this instance listed them a moment before they were created.
+    monkeypatch.setattr(AIOKafkaAdminClient, "list_topics", nothing_yet)
+    with caplog.at_level(logging.INFO, logger="order_analytics.consumer"):
+        await consumer_module._ensure_topics(kafka)
+
+    assert "topics created" not in caplog.text

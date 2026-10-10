@@ -4,7 +4,13 @@ import logging
 
 from aiokafka import AIOKafkaConsumer, ConsumerRecord, TopicPartition
 from aiokafka.admin import AIOKafkaAdminClient, NewTopic
-from aiokafka.errors import CommitFailedError, IllegalStateError, KafkaError
+from aiokafka.errors import (
+    CommitFailedError,
+    IllegalStateError,
+    KafkaError,
+    TopicAlreadyExistsError,
+    for_code,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from order_analytics.ingest import Message, ingest
@@ -128,10 +134,22 @@ async def _ensure_topics(bootstrap_servers: str) -> None:
     try:
         await admin.start()
         missing = sorted(set(TOPICS) - set(await admin.list_topics()))
-        if missing:
-            await admin.create_topics(
-                [NewTopic(name, PARTITIONS_PER_TOPIC, replication_factor=1) for name in missing]
-            )
-            logger.info("topics created", extra={"topics": missing})
+        if not missing:
+            return
+        response = await admin.create_topics(
+            [NewTopic(name, PARTITIONS_PER_TOPIC, replication_factor=1) for name in missing]
+        )
+        # The broker answers topic by topic, and aiokafka hands the answer over as it came:
+        # a refusal is an error code in it, not an exception.
+        created = []
+        for topic, code, *detail in response.topic_errors:
+            if code == 0:
+                created.append(topic)
+            elif code != TopicAlreadyExistsError.errno:
+                error = for_code(code)
+                reason = detail[0] if detail and detail[0] else error.description
+                raise error(f"topic {topic} not created: {reason}")
+        if created:
+            logger.info("topics created", extra={"topics": created})
     finally:
         await admin.close()
