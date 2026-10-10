@@ -31,10 +31,15 @@ class _Wire(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
 
 
+# Both ids are indexed, and PostgreSQL refuses an index entry larger than about 2.7 kB.
+# The ids of the contract are UUIDs (36 characters), so the limit leaves plenty of room.
+Id = Annotated[str, Field(min_length=1, max_length=200)]
+
+
 class Envelope(_Wire):
-    event_id: str = Field(min_length=1)
+    event_id: Id
     type: str = Field(min_length=1)
-    order_id: str = Field(min_length=1)
+    order_id: Id
     occurred_at: AwareDatetime
     payload: dict[str, Any]
 

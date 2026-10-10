@@ -98,6 +98,8 @@ def test_converts_the_date_to_utc() -> None:
         (envelope(eventId=...), "eventId: Field required"),
         (envelope(orderId=""), "orderId"),
         (envelope(orderId=42), "orderId"),
+        (envelope(orderId="o" * 201), "orderId"),
+        (envelope(eventId="e" * 201), "eventId"),
         (envelope(occurredAt="yesterday"), "occurredAt"),
         (envelope(occurredAt="2026-10-10T14:03:22"), "occurredAt"),
         (envelope(occurredAt="9999-12-31T23:59:59-05:00"), "date out of range"),

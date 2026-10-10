@@ -171,6 +171,22 @@ async def test_text_the_database_cannot_hold_is_rejected_instead_of_retried_fore
     assert await count(sessions, Order) == 0
 
 
+async def test_id_too_long_for_an_index_is_rejected_instead_of_retried_forever(
+    sessions: Sessions,
+) -> None:
+    created = story("order-1", CONFIRMED)[0]
+    endless_order = custom("OrderCreated", "o" * 3000, "2026-10-05T09:00:00Z", {"items": []})
+    endless_event = json.loads(created.value) | {"eventId": "e" * 3000}
+
+    assert await receive(sessions, [endless_order, created]) == [Outcome.REJECTED, Outcome.STORED]
+    assert await ingest(sessions, raw(json.dumps(endless_event).encode())) is Outcome.REJECTED
+
+    async with sessions() as session:
+        reasons = (await session.scalars(select(RejectedEvent.reason))).all()
+    assert [reason.split(":")[0] for reason in reasons] == ["invalid envelope"] * 2
+    assert await count(sessions, Event) == 1
+
+
 async def test_rejected_message_delivered_again_is_recorded_once(sessions: Sessions) -> None:
     message = raw(b"garbage")
 
