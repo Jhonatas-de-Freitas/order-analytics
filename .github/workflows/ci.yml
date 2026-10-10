@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.13.0"
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen
+      # PostgreSQL and Kafka are started by the tests themselves (Testcontainers).
+      # -rs lists skipped tests: on CI there must be none.
+      - run: uv run pytest -rs
+
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start the service, PostgreSQL and Kafka
+        run: docker compose up -d --build --wait
+
+      - name: Publish the example events and check the numbers
+        run: |
+          docker compose exec -T order-analytics python -m order_analytics.seed
+          ./scripts/smoke-test.sh
+
+      - name: Publish the same events again, the numbers must not change
+        run: |
+          docker compose exec -T order-analytics python -m order_analytics.seed
+          # First run: 1 repeated event. Second run: all 58 events plus the repeated one.
+          timeout 60 bash -c 'until [ "$(docker compose logs order-analytics | grep -c "duplicate event ignored")" -ge 60 ]; do sleep 1; done'
+          ./scripts/smoke-test.sh
+          # Each run carries one broken message.
+          rejected="$(docker compose exec -T postgres psql -U postgres -d analytics_db -tAc "select count(*) from rejected_events")"
+          echo "rejected messages: $rejected"
+          [ "$rejected" = "2" ]
+
+      - name: Rebuild the read model, the numbers must not change
+        run: |
+          docker compose exec -T order-analytics python -m order_analytics.rebuild
+          ./scripts/smoke-test.sh
+
+      - name: Stop with SIGTERM, the consumer must close before the process ends
+        run: |
+          docker compose stop order-analytics
+          logs="$(docker compose logs order-analytics)"
+          grep -q "consumer stopped" <<<"$logs"
+          grep -q "Application shutdown complete" <<<"$logs"
+          # 137 would mean Docker gave up waiting and killed the process.
+          exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq order-analytics)")"
+          echo "exit code: $exit_code"
+          [ "$exit_code" != "137" ]
+
+      - name: Start again, the numbers are still there
+        run: |
+          docker compose up -d --wait
+          ./scripts/smoke-test.sh
+
+      # The same two commands that the README shows. Kept last: they add an order.
+      - name: Confirmation that arrives before the creation
+        run: |
+          publish() {
+            docker compose exec -T kafka /opt/kafka/bin/kafka-console-producer.sh \
+              --bootstrap-server localhost:9092 --topic orders.events < "$1"
+          }
+          summary_has() {
+            timeout 30 bash -c "until curl -fsS http://localhost:8090/analytics/summary | jq -e '$1' > /dev/null; do sleep 1; done"
+          }
+          publish examples/order-confirmed.json
+          summary_has '.totalOrders == 17 and .confirmed == 10 and .confirmedRevenue == 8221.80 and .averageSecondsToConfirm == 6'
+          publish examples/order-created.json
+          summary_has '.totalOrders == 17 and .confirmed == 10 and .averageSecondsToConfirm == 5.9'
+
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop everything
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    needs: [quality, test, e2e]
+    # Publishing only makes sense from main and while the repository is public.
+    if: github.ref == 'refs/heads/main' && !github.event.repository.private
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/jhonatas-de-freitas/order-analytics:latest
+            ghcr.io/jhonatas-de-freitas/order-analytics:${{ steps.sha.outputs.short }}
