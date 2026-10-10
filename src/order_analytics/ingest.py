@@ -117,7 +117,7 @@ def _as_text(raw: bytes | None) -> str | None:
     if raw is None:
         return None
     # PostgreSQL text cannot hold NUL, and a rejected message can be any bytes at all.
-    return raw.decode("utf-8", errors="replace").replace("\x00", "�")
+    return raw.decode("utf-8", errors="replace").replace("\x00", "\ufffd")
 
 
 def _is_data_refused(error: DBAPIError) -> bool:
