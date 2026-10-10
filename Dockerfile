@@ -14,7 +14,7 @@ RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim
 
-RUN useradd --system --uid 1001 app
+RUN useradd --uid 1001 --no-create-home app
 WORKDIR /app
 
 COPY --from=build /app/.venv ./.venv
@@ -25,8 +25,9 @@ ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app
 EXPOSE 8090
 
+# The port comes from the same variable that the server reads.
 HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=12 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ.get('PORT', '8090') + '/health')"]
 
 # exec, so that the server is PID 1 and receives the SIGTERM of `docker stop` itself.
 CMD ["sh", "-c", "alembic upgrade head && exec python -m order_analytics"]
