@@ -1,0 +1,1 @@
+{"eventId": "0a1b2c3d-0000-4000-8000-0000000000c1", "type": "OrderCreated", "orderId": "0a1b2c3d-0000-4000-8000-000000000001", "occurredAt": "2026-10-10T12:00:00Z", "payload": {"customerId": "c-1001", "customerName": "Ana Souza", "customerEmail": "ana@exemplo.com", "items": [{"productId": "11111111-1111-1111-1111-111111111111", "quantity": 1}]}}
