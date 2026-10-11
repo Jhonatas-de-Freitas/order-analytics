@@ -3,11 +3,13 @@
 [![CI](https://github.com/Jhonatas-de-Freitas/order-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhonatas-de-Freitas/order-analytics/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 
+Faz parte de um sistema de pedidos com 5 repositórios. Os outros 4: [order-platform](https://github.com/Jhonatas-de-Freitas/order-platform), [api-gateway](https://github.com/Jhonatas-de-Freitas/api-gateway), [notification-service](https://github.com/Jhonatas-de-Freitas/notification-service) e [order-dashboard](https://github.com/Jhonatas-de-Freitas/order-dashboard).
+
 ## O que é
 
 Um serviço em Python que ouve os eventos de uma loja no Kafka e transforma em números: quantos pedidos, quanto faturou, o que foi cancelado e por quê, quais produtos mais saem.
 
-Faz parte de um sistema de cinco projetos. Os eventos vêm dos serviços Java do [order-platform](https://github.com/Jhonatas-de-Freitas/order-platform); o painel [order-dashboard](https://github.com/Jhonatas-de-Freitas/order-dashboard) mostra estes números passando pelo [api-gateway](https://github.com/Jhonatas-de-Freitas/api-gateway). Mas ele roda sozinho: tem um comando que publica eventos de exemplo.
+Os eventos vêm dos serviços Java do order-platform, e o order-dashboard mostra estes números passando pelo api-gateway. Mas ele roda sozinho: tem um comando que publica eventos de exemplo.
 
 Usei FastAPI, SQLAlchemy 2 (assíncrono) com Alembic, PostgreSQL e `aiokafka`.
 
@@ -59,7 +61,7 @@ docker compose exec order-analytics python -m order_analytics.seed
 curl http://localhost:8090/analytics/summary
 ```
 
-O `seed` publica 16 pedidos de exemplo, espalhados em cinco dias (de 05 a 09/10/2026). A resposta é sempre esta:
+O `seed` publica 16 pedidos de exemplo, espalhados em cinco dias (de 05 a 09/10/2026). O consumidor leva um instante para ler tudo: se os números vierem menores, é só repetir o `curl` (ou rodar o `smoke-test.sh`, que espera sozinho). No fim, a resposta é sempre esta:
 
 ```json
 {"totalOrders":16,"confirmed":9,"cancelled":5,"inProgress":2,"confirmedRevenue":7871.9,
@@ -175,3 +177,7 @@ O CI repete tudo isso: `quality`, `test` e um job `e2e` que sobe o compose, roda
 - Preencher com zero os dias sem venda e aceitar fuso horário no faturamento.
 - Filtro por período e por status no CSV.
 - Particionar `events` por mês.
+
+## Licença
+
+MIT. O texto está em [LICENSE](LICENSE).
